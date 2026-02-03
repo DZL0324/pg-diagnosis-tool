@@ -64,6 +64,12 @@ fi
 START_TS=$(date '+%Y-%m-%d %H:%M:%S%z')
 START_EPOCH=$(date +%s)
 
+DB_CONNECT_OK=$(psql_query_quiet "select 1")
+if [[ -z "$DB_CONNECT_OK" ]]; then
+  echo "Database connection failed. Check PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE." >&2
+  exit 1
+fi
+
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
@@ -124,6 +130,16 @@ write_out ""
 write_out "## PostgreSQL ${INTERVAL_SECONDS}-Second Snapshot Diagnostics (Single Instance | T1→T2)"
 write_out ""
 write_out "### PostgreSQL (${HOST_NAME:-server} | port ${PGPORT:-5432})"
+write_out ""
+write_out "### Connectivity Checks"
+write_out ""
+append_block <<EOF
+| Item | Status | Details |
+|---|---|---|
+| OS Access | OK | Host: ${HOST_NAME:-N/A} |
+| Database Connection | OK | DB: ${DB_NAME} |
+EOF
+
 write_out ""
 write_out "### DB Information"
 write_out ""
@@ -204,7 +220,7 @@ awk -v elapsed="$ELAPSED" -F $'\t' '
   }
 ' "$DB1" "$DB2" | append_block
 
-write_out "**Snapshot Delta (Target ${INTERVAL_SECONDS}s)**"
+write_out "Snapshot Delta (Target ${INTERVAL_SECONDS}s)"
 append_block <<'EOF'
 
 | Metric | Value | Notes |
@@ -237,7 +253,7 @@ awk -v elapsed="$ELAPSED" -F $'\t' '
 ' "$DB1" "$DB2" | append_block
 
 write_out ""
-write_out "**Checkpoint Storm Assessment (Window)**"
+write_out "Checkpoint Storm Assessment (Window)"
 append_block <<'EOF'
 
 | Item | Verdict | Evidence |
@@ -445,7 +461,7 @@ append_block <<EOF
 |---|---|---|
 | AAS (Normalized) | ${AAS} | Current window DB Time / elapsed / effective CPU cores |
 | Main Wait Type | ${MAIN_WAIT} | Aggregated from Top Wait Classes section |
-| Overall Assessment | ${SUMMARY_NOTE} | 当 AAS≤1 时默认为空闲/轻载，无需从等待画像切入排查瓶颈 |
+| Overall Assessment | ${SUMMARY_NOTE} | Default to idle/light when AAS≤1 (当 AAS≤1 时默认为空闲/轻载) |
 EOF
 
 write_out ""
