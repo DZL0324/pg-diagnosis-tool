@@ -85,8 +85,20 @@ psql_query "select datname, xact_commit, xact_rollback, blks_read, blks_hit, tup
 psql_query "select checkpoints_timed, checkpoints_req, checkpoint_write_time, checkpoint_sync_time, buffers_checkpoint, buffers_clean, maxwritten_clean, buffers_backend, buffers_backend_fsync, buffers_alloc from pg_stat_bgwriter" > "$BG1"
 
 HAS_STATEMENTS=$(psql_query_quiet "select 1 from pg_extension where extname='pg_stat_statements' limit 1")
+STAT_TOTAL_COL="total_exec_time"
+STAT_MEAN_COL="mean_exec_time"
 if [[ -n "$HAS_STATEMENTS" ]]; then
-  psql_query "select dbid, sum(total_exec_time), sum(blk_read_time), sum(blk_write_time), sum(calls) from pg_stat_statements group by dbid" > "$STAT1"
+  HAS_TOTAL_EXEC=$(psql_query_quiet "select 1 from information_schema.columns where table_name='pg_stat_statements' and column_name='total_exec_time' limit 1")
+  if [[ -z "$HAS_TOTAL_EXEC" ]]; then
+    STAT_TOTAL_COL="total_time"
+  fi
+  HAS_MEAN_EXEC=$(psql_query_quiet "select 1 from information_schema.columns where table_name='pg_stat_statements' and column_name='mean_exec_time' limit 1")
+  if [[ -z "$HAS_MEAN_EXEC" ]]; then
+    STAT_MEAN_COL="mean_time"
+  fi
+fi
+if [[ -n "$HAS_STATEMENTS" ]]; then
+  psql_query "select dbid, sum(${STAT_TOTAL_COL}), sum(blk_read_time), sum(blk_write_time), sum(calls) from pg_stat_statements group by dbid" > "$STAT1"
 fi
 
 HAS_WAIT_SAMPLING=$(psql_query_quiet "select 1 from pg_extension where extname='pg_wait_sampling' limit 1")
@@ -101,7 +113,7 @@ psql_query "select datname, xact_commit, xact_rollback, blks_read, blks_hit, tup
 psql_query "select checkpoints_timed, checkpoints_req, checkpoint_write_time, checkpoint_sync_time, buffers_checkpoint, buffers_clean, maxwritten_clean, buffers_backend, buffers_backend_fsync, buffers_alloc from pg_stat_bgwriter" > "$BG2"
 
 if [[ -n "$HAS_STATEMENTS" ]]; then
-  psql_query "select dbid, sum(total_exec_time), sum(blk_read_time), sum(blk_write_time), sum(calls) from pg_stat_statements group by dbid" > "$STAT2"
+  psql_query "select dbid, sum(${STAT_TOTAL_COL}), sum(blk_read_time), sum(blk_write_time), sum(calls) from pg_stat_statements group by dbid" > "$STAT2"
 fi
 
 if [[ -n "$HAS_WAIT_SAMPLING" ]]; then
@@ -548,7 +560,7 @@ write_out ""
 write_out "### Top SQL (by average execution time)"
 write_out ""
 if [[ -n "$HAS_STATEMENTS" ]]; then
-  TOP_SQL=$(psql_query "select md5(query), left(regexp_replace(query, '\\s+', ' ', 'g'), 120), calls, round(mean_exec_time/1000,4), round(total_exec_time/1000,2), round(blk_read_time/1000,2), round((total_exec_time - blk_read_time - blk_write_time)/1000,2) from pg_stat_statements order by mean_exec_time desc limit 5")
+  TOP_SQL=$(psql_query "select md5(query), left(regexp_replace(query, '\\s+', ' ', 'g'), 120), calls, round(${STAT_MEAN_COL}/1000,4), round(${STAT_TOTAL_COL}/1000,2), round(blk_read_time/1000,2), round((${STAT_TOTAL_COL} - blk_read_time - blk_write_time)/1000,2) from pg_stat_statements order by ${STAT_MEAN_COL} desc limit 5")
   if [[ -n "$TOP_SQL" ]]; then
     append_block <<'EOF'
 | md5(query) | SQL Snippet | Calls | Avg Exec_s | Total Exec_s | IO_s | CPU_s |
